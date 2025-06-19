@@ -1,0 +1,7 @@
+.temp
+.temp2
+local_production_test
+.backup
+__pycache__
+logs
+production_config-not-ready.json
