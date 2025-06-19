@@ -30,15 +30,15 @@ class BinarySearchFileCounter:
     High-performance file counter using binary search optimization.
     Designed for Windows network drives with 100k+ files per directory.
     """
-    
+
     def __init__(self, config_path: str = "config.json"):
         self.config_path = config_path
         self.state_path = "state.json"
         self.approvals_path = "pending_approvals.json"
-        
+
         # Load configuration first
         self.config = self.load_config()
-        
+
         # Set production settings
         self.is_production = self.config.get("production_settings", {}).get(
             "is_production", False
@@ -49,43 +49,45 @@ class BinarySearchFileCounter:
         self.bootstrap_mode = self.config.get("production_settings", {}).get(
             "bootstrap_mode", False
         )
-        
+
         # Setup logging early
         self.setup_logging()
-        
+
         # Load state and approvals
         self.state = self.load_state()
         self.pending_approvals = self.load_pending_approvals()
-        
+
         # Pre-compile file filtering rules
         self._prepare_file_filters()
-        
+
         # Log initialization
-        self.logger.info(f"Binary Search File Counter initialized - config: {self.config_path}")
+        self.logger.info(
+            f"Binary Search File Counter initialized - config: {self.config_path}"
+        )
         if self.is_local_test:
             self.logger.info("Mode: LOCAL TEST (production logic with local data)")
         elif self.is_production:
             self.logger.info("Mode: PRODUCTION (optimized for network drives)")
         else:
             self.logger.info("Mode: DEVELOPMENT")
-            
+
         self._log_device_production_dates()
 
     def _prepare_file_filters(self):
         """Pre-compile file filtering rules for performance"""
         file_filtering = self.config.get("file_filtering", {})
-        
+
         # Convert extensions to set for O(1) lookup
         self.include_extensions = set(
             ext.lower() for ext in file_filtering.get("include_extensions", [])
         )
-        
+
         # Pre-compile exclude patterns
         self.exclude_patterns = file_filtering.get("exclude_patterns", [])
-        
+
         # Cache minimum file size
         self.min_file_size = file_filtering.get("min_file_size_bytes", 0)
-        
+
         self.logger.info(
             f"File filters: {len(self.include_extensions)} extensions, "
             f"{len(self.exclude_patterns)} exclude patterns, min size: {self.min_file_size}B"
@@ -99,31 +101,39 @@ class BinarySearchFileCounter:
             for device_name in devices.keys():
                 if devices[device_name].get("enabled", False):
                     start_date = self.get_device_production_start_date(device_name)
-                    self.logger.info(f"  {device_name}: {start_date.strftime('%Y-%m-%d %H:%M:%S')}")
+                    self.logger.info(
+                        f"  {device_name}: {start_date.strftime('%Y-%m-%d %H:%M:%S')}"
+                    )
 
     def get_device_production_start_date(self, device_name: str) -> datetime:
         """Get the production start date for a specific device"""
         device_config = self.config.get("devices", {}).get(device_name, {})
         device_start_date_str = device_config.get("production_start_date")
-        
+
         if device_start_date_str:
             try:
                 return datetime.fromisoformat(device_start_date_str)
             except ValueError:
-                self.logger.warning(f"Invalid production_start_date for {device_name}: {device_start_date_str}")
-        
+                self.logger.warning(
+                    f"Invalid production_start_date for {device_name}: {device_start_date_str}"
+                )
+
         # Fallback to global production start date
         prod_settings = self.config.get("production_settings", {})
         global_start_date_str = prod_settings.get("production_start_date")
-        
+
         if global_start_date_str:
             try:
                 return datetime.fromisoformat(global_start_date_str)
             except ValueError:
-                self.logger.warning(f"Invalid global production_start_date: {global_start_date_str}")
+                self.logger.warning(
+                    f"Invalid global production_start_date: {global_start_date_str}"
+                )
 
         # Final fallback
-        self.logger.warning(f"No valid production start date for {device_name}, using current time")
+        self.logger.warning(
+            f"No valid production start date for {device_name}, using current time"
+        )
         return datetime.now()
 
     def setup_logging(self):
@@ -131,11 +141,15 @@ class BinarySearchFileCounter:
         log_dir = Path("logs")
         log_dir.mkdir(exist_ok=True)
 
-        log_level = getattr(logging, self.config.get("logging", {}).get("level", "INFO"))
+        log_level = getattr(
+            logging, self.config.get("logging", {}).get("level", "INFO")
+        )
 
         # Include config name in log file
         config_name = Path(self.config_path).stem
-        log_filename = f"bi_counter_binary_{config_name}_{datetime.now().strftime('%Y%m%d')}.log"
+        log_filename = (
+            f"bi_counter_binary_{config_name}_{datetime.now().strftime('%Y%m%d')}.log"
+        )
 
         logging.basicConfig(
             level=log_level,
@@ -145,8 +159,7 @@ class BinarySearchFileCounter:
                 logging.StreamHandler(),
             ],
         )
-        
-        
+
         self.logger = logging.getLogger(__name__)
 
     def load_config(self) -> Dict:
@@ -181,7 +194,9 @@ class BinarySearchFileCounter:
 
         if self.is_production or self.is_local_test:
             initial_state["deployment_date"] = datetime.now().isoformat()
-            initial_state["deployment_mode"] = "local_test" if self.is_local_test else "production"
+            initial_state["deployment_mode"] = (
+                "local_test" if self.is_local_test else "production"
+            )
 
         return initial_state
 
@@ -227,20 +242,22 @@ class BinarySearchFileCounter:
 
         return True
 
-    def bulk_collect_file_timestamps(self, directory_path: Path) -> List[Tuple[float, str]]:
+    def bulk_collect_file_timestamps(
+        self, directory_path: Path
+    ) -> List[Tuple[float, str]]:
         """
         CORE OPTIMIZATION: Bulk timestamp collection for binary search
         Single directory enumeration instead of individual file stats
         Returns: List of (timestamp, filename) tuples
         """
         timestamps = []
-        
+
         if not directory_path.exists():
             self.logger.warning(f"Directory does not exist: {directory_path}")
             return timestamps
 
         collection_start = datetime.now()
-        
+
         try:
             # Single os.scandir() call for bulk directory enumeration
             with os.scandir(str(directory_path)) as entries:
@@ -249,14 +266,16 @@ class BinarySearchFileCounter:
                         try:
                             # Get stat info via DirEntry (network optimized)
                             stat_info = entry.stat()
-                            
+
                             # Apply filtering
                             if self.fast_file_filter(entry.name, stat_info.st_size):
                                 # Store timestamp and filename
                                 timestamps.append((stat_info.st_mtime, entry.name))
-                                
+
                         except OSError as e:
-                            self.logger.warning(f"Could not access file {entry.path}: {e}")
+                            self.logger.warning(
+                                f"Could not access file {entry.path}: {e}"
+                            )
                             continue
 
         except PermissionError:
@@ -267,18 +286,22 @@ class BinarySearchFileCounter:
             return []
 
         collection_duration = (datetime.now() - collection_start).total_seconds()
-        
+
         # Sort by timestamp for binary search (critical step)
         timestamps.sort(key=lambda x: x[0])
-        
+
         self.logger.debug(
             f"Collected {len(timestamps)} file timestamps in {collection_duration:.3f}s "
-            f"({len(timestamps)/collection_duration:.0f} files/sec)" if collection_duration > 0 else "(instant)"
+            f"({len(timestamps) / collection_duration:.0f} files/sec)"
+            if collection_duration > 0
+            else "(instant)"
         )
-        
+
         return timestamps
 
-    def binary_search_file_count(self, timestamps: List[Tuple[float, str]], cutoff_timestamp: float) -> Dict[str, int]:
+    def binary_search_file_count(
+        self, timestamps: List[Tuple[float, str]], cutoff_timestamp: float
+    ) -> Dict[str, int]:
         """
         CORE ALGORITHM: Binary search for efficient file counting
         Finds the insertion point for cutoff_timestamp in sorted array
@@ -286,28 +309,32 @@ class BinarySearchFileCounter:
         """
         if not timestamps:
             return {"total_files": 0, "historical_files": 0, "new_files": 0}
-        
+
         total_files = len(timestamps)
-        
+
         # Binary search for cutoff point
         # bisect_left finds leftmost insertion point
-        cutoff_index = bisect.bisect_left([ts for ts, _ in timestamps], cutoff_timestamp)
-        
+        cutoff_index = bisect.bisect_left(
+            [ts for ts, _ in timestamps], cutoff_timestamp
+        )
+
         historical_files = cutoff_index
         new_files = total_files - historical_files
-        
+
         self.logger.debug(
             f"Binary search: {total_files} total, cutoff at index {cutoff_index}, "
             f"{historical_files} historical, {new_files} new"
         )
-        
+
         return {
             "total_files": total_files,
             "historical_files": historical_files,
             "new_files": new_files,
         }
 
-    def scan_device_optimized(self, device_name: str, device_config: Dict) -> Dict[str, int]:
+    def scan_device_optimized(
+        self, device_name: str, device_config: Dict
+    ) -> Dict[str, int]:
         """
         Optimized device scanning using binary search approach
         Single directory scan + binary search vs individual file processing
@@ -324,19 +351,21 @@ class BinarySearchFileCounter:
             return {"total_files": 0, "historical_files": 0, "new_files": 0}
 
         device_start = datetime.now()
-        
+
         # Step 1: Bulk timestamp collection (single network operation)
         timestamps = self.bulk_collect_file_timestamps(biu_path)
-        
+
         if not timestamps:
             return {"total_files": 0, "historical_files": 0, "new_files": 0}
 
         # Step 2: Determine cutoff logic based on bootstrap status
         device_state = self.state["devices"].get(device_name, {})
-        
+
         # Don't count if pending approval
         if device_state.get("approval_status") == "PENDING_APPROVAL":
-            self.logger.info(f"Device {device_name} pending approval - counting as historical")
+            self.logger.info(
+                f"Device {device_name} pending approval - counting as historical"
+            )
             return {
                 "total_files": len(timestamps),
                 "historical_files": len(timestamps),
@@ -344,15 +373,17 @@ class BinarySearchFileCounter:
             }
 
         is_first_run = not self.state.get("bootstrap_completed", False)
-        
+
         if is_first_run:
             # First run logic: use device production start date
             device_production_start = self.get_device_production_start_date(device_name)
             cutoff_timestamp = device_production_start.timestamp()
-            
+
             if self.bootstrap_mode:
                 # Bootstrap mode: all files are historical
-                self.logger.info(f"{device_name} BOOTSTRAP MODE: All {len(timestamps)} files marked historical")
+                self.logger.info(
+                    f"{device_name} BOOTSTRAP MODE: All {len(timestamps)} files marked historical"
+                )
                 return {
                     "total_files": len(timestamps),
                     "historical_files": len(timestamps),
@@ -360,27 +391,31 @@ class BinarySearchFileCounter:
                 }
             else:
                 # Non-bootstrap: files after production start count
-                self.logger.info(f"{device_name} NON-BOOTSTRAP: Using production start {device_production_start}")
-                
+                self.logger.info(
+                    f"{device_name} NON-BOOTSTRAP: Using production start {device_production_start}"
+                )
+
         else:
             # Subsequent runs: use last scan date
             last_scan_str = self.state["last_scan"]
             last_scan_date = datetime.fromisoformat(last_scan_str)
             cutoff_timestamp = last_scan_date.timestamp()
-            
-            self.logger.debug(f"{device_name} INCREMENTAL: Using last scan {last_scan_date}")
+
+            self.logger.debug(
+                f"{device_name} INCREMENTAL: Using last scan {last_scan_date}"
+            )
 
         # Step 3: Binary search for file count (THE CORE OPTIMIZATION)
         file_counts = self.binary_search_file_count(timestamps, cutoff_timestamp)
-        
+
         device_duration = (datetime.now() - device_start).total_seconds()
-        
+
         self.logger.info(
             f"Device {device_name}: {file_counts['new_files']} new, "
             f"{file_counts['total_files']} total, {file_counts['historical_files']} historical "
             f"({device_duration:.3f}s - BINARY SEARCH OPTIMIZED)"
         )
-        
+
         return file_counts
 
     def scan_all_devices(self) -> Dict[str, Dict[str, int]]:
@@ -390,34 +425,40 @@ class BinarySearchFileCounter:
         """
         scan_start = datetime.now()
         device_results = {}
-        
+
         devices_config = self.config.get("devices", {})
-        enabled_devices = [name for name, config in devices_config.items() if config.get("enabled", False)]
-        
+        enabled_devices = [
+            name
+            for name, config in devices_config.items()
+            if config.get("enabled", False)
+        ]
+
         self.logger.info(f"Starting optimized scan of {len(enabled_devices)} devices")
-        
+
         for device_name in enabled_devices:
             device_config = devices_config[device_name]
             file_counts = self.scan_device_optimized(device_name, device_config)
             device_results[device_name] = file_counts
-            
+
             # Update device state
             self.update_device_state(device_name, file_counts)
 
         total_duration = (datetime.now() - scan_start).total_seconds()
         total_files = sum(result["total_files"] for result in device_results.values())
-        
+
         self.logger.info(
             f"BINARY SEARCH SCAN COMPLETE: {total_files} files across {len(enabled_devices)} devices "
-            f"in {total_duration:.2f}s ({total_files/total_duration:.0f} files/sec if > 0 else 'instant')"
+            f"in {total_duration:.2f}s ({total_files / total_duration:.0f} files/sec if > 0 else 'instant')"
         )
-        
+
         return device_results
 
     def update_device_state(self, device_name: str, file_counts: Dict[str, int]):
         """Update state for a specific device"""
         if device_name not in self.state["devices"]:
-            self.state["devices"][device_name] = self.initialize_device_state(device_name)
+            self.state["devices"][device_name] = self.initialize_device_state(
+                device_name
+            )
 
         device_state = self.state["devices"][device_name]
 
@@ -427,7 +468,9 @@ class BinarySearchFileCounter:
 
         # Update device production start date if changed
         current_device_prod_start = self.get_device_production_start_date(device_name)
-        device_state["device_production_start_date"] = current_device_prod_start.isoformat()
+        device_state["device_production_start_date"] = (
+            current_device_prod_start.isoformat()
+        )
 
         # Don't update count if pending approval
         if device_state.get("approval_status") == "PENDING_APPROVAL":
@@ -478,7 +521,7 @@ class BinarySearchFileCounter:
         """Check for tier advancement eligibility and handle approval workflow"""
         current_tier = device_state["current_tier"]
         current_count = device_state["count"]
-        
+
         # Don't advance if at excluded tier
         if current_tier in self.config.get("excluded_tiers", []):
             return
@@ -496,22 +539,30 @@ class BinarySearchFileCounter:
             eligible_tier = "2h"
 
         if eligible_tier and eligible_tier != current_tier:
-            self.logger.info(f"Device {device_name} eligible for advancement: {current_tier} -> {eligible_tier}")
-            
+            self.logger.info(
+                f"Device {device_name} eligible for advancement: {current_tier} -> {eligible_tier}"
+            )
+
             # Create approval request
-            approval_id = self.create_approval_request(device_name, current_tier, eligible_tier, current_count)
-            
+            approval_id = self.create_approval_request(
+                device_name, current_tier, eligible_tier, current_count
+            )
+
             # Set device to pending approval state
             device_state["approval_status"] = "PENDING_APPROVAL"
             device_state["pending_approval_id"] = approval_id
-            
+
             # Send email notification if enabled
             if self.config.get("email_settings", {}).get("enabled", False):
                 self.send_approval_request_email(approval_id)
             else:
-                self.logger.info("Email disabled - approval request created but not sent")
+                self.logger.info(
+                    "Email disabled - approval request created but not sent"
+                )
 
-    def create_approval_request(self, device_name: str, current_tier: str, new_tier: str, count: int) -> str:
+    def create_approval_request(
+        self, device_name: str, current_tier: str, new_tier: str, count: int
+    ) -> str:
         """Create approval request and return approval ID"""
         approval_id = str(uuid.uuid4())[:8]
         device_production_start = self.get_device_production_start_date(device_name)
@@ -535,7 +586,9 @@ class BinarySearchFileCounter:
         self.pending_approvals["pending"][approval_id] = approval_request
         self.save_pending_approvals()
 
-        self.logger.info(f"Created approval request {approval_id} for {device_name}: {current_tier} -> {new_tier}")
+        self.logger.info(
+            f"Created approval request {approval_id} for {device_name}: {current_tier} -> {new_tier}"
+        )
         return approval_id
 
     def send_approval_request_email(self, approval_id: str):
@@ -544,7 +597,7 @@ class BinarySearchFileCounter:
             return
 
         approval_request = self.pending_approvals["pending"][approval_id]
-        
+
         subject = f"🚀 BI Tier Advancement Approval Required - {approval_request['device_name']} (Binary Search Optimized)"
 
         body = f"""
@@ -588,7 +641,9 @@ BI Counter System (Binary Search Optimized)
             msg["Subject"] = subject
             msg.attach(MIMEText(body, "plain"))
 
-            server = smtplib.SMTP(email_config["smtp_server"], email_config["smtp_port"])
+            server = smtplib.SMTP(
+                email_config["smtp_server"], email_config["smtp_port"]
+            )
             if email_config["use_tls"]:
                 server.starttls()
             server.login(email_config["username"], email_config["password"])
@@ -599,7 +654,9 @@ BI Counter System (Binary Search Optimized)
         except Exception as e:
             self.logger.error(f"Failed to send email: {e}")
 
-    def process_approval_decision(self, approval_id: str, decision: str, approver: str) -> bool:
+    def process_approval_decision(
+        self, approval_id: str, decision: str, approver: str
+    ) -> bool:
         """Process approval decision (APPROVE/REJECT)"""
         if approval_id not in self.pending_approvals["pending"]:
             self.logger.error(f"Approval ID {approval_id} not found")
@@ -655,7 +712,9 @@ BI Counter System (Binary Search Optimized)
                     "total_files": device_state["total_files"],
                     "historical_files": device_state.get("historical_files", 0),
                     "approval_status": device_state.get("approval_status", "NONE"),
-                    "device_production_start_date": device_state.get("device_production_start_date", "Unknown"),
+                    "device_production_start_date": device_state.get(
+                        "device_production_start_date", "Unknown"
+                    ),
                 }
                 for device_name, device_state in self.state["devices"].items()
             },
@@ -672,8 +731,14 @@ BI Counter System (Binary Search Optimized)
 
     def run_scan(self):
         """Main scan execution using binary search optimization"""
-        mode_str = "Local Test" if self.is_local_test else ("Production" if self.is_production else "Development")
-        self.logger.info(f"Starting BI Counter {mode_str} Scan (BINARY SEARCH OPTIMIZED)")
+        mode_str = (
+            "Local Test"
+            if self.is_local_test
+            else ("Production" if self.is_production else "Development")
+        )
+        self.logger.info(
+            f"Starting BI Counter {mode_str} Scan (BINARY SEARCH OPTIMIZED)"
+        )
 
         start_time = datetime.now()
 
@@ -687,21 +752,27 @@ BI Counter System (Binary Search Optimized)
         # Handle bootstrap completion
         if not self.state.get("bootstrap_completed", False):
             self.state["bootstrap_completed"] = True
-            
+
             # Clear bootstrap mode from config after first use
             if "bootstrap_mode" in self.config.get("production_settings", {}):
                 bootstrap_used = self.config["production_settings"]["bootstrap_mode"]
                 del self.config["production_settings"]["bootstrap_mode"]
-                self.config["production_settings"]["bootstrap_used_on_deployment"] = bootstrap_used
-                
+                self.config["production_settings"]["bootstrap_used_on_deployment"] = (
+                    bootstrap_used
+                )
+
                 try:
                     with open(self.config_path, "w") as f:
                         json.dump(self.config, f, indent=2)
-                    self.logger.info(f"Bootstrap mode {bootstrap_used} applied and cleared from config")
+                    self.logger.info(
+                        f"Bootstrap mode {bootstrap_used} applied and cleared from config"
+                    )
                 except Exception as e:
                     self.logger.warning(f"Could not save updated config: {e}")
-            
-            self.logger.info("Bootstrap completed - future scans will use binary search incremental counting")
+
+            self.logger.info(
+                "Bootstrap completed - future scans will use binary search incremental counting"
+            )
 
         # Update scan timestamp
         self.state["last_scan"] = start_time.isoformat()
@@ -711,13 +782,13 @@ BI Counter System (Binary Search Optimized)
         report = self.generate_report()
         scan_duration = (datetime.now() - start_time).total_seconds()
         total_files = sum(result["total_files"] for result in device_results.values())
-        
+
         self.logger.info(
             f"🚀 BINARY SEARCH PERFORMANCE: Completed in {scan_duration:.2f}s, "
             f"processed {total_files} files using O(log n) algorithm "
-            f"({total_files/scan_duration:.0f} files/sec effective throughput)"
+            f"({total_files / scan_duration:.0f} files/sec effective throughput)"
         )
-        
+
         return report
 
 
@@ -732,7 +803,7 @@ def main():
         print(f"📁 Using default config file: {config_file}")
 
     print("🚀 Binary Search File Counter - O(log n) Optimization")
-    
+
     counter = BinarySearchFileCounter(config_file)
 
     try:
@@ -741,7 +812,8 @@ def main():
         if report:
             print("\n" + "=" * 80)
             mode_indicator = (
-                "🧪 LOCAL TEST" if counter.is_local_test
+                "🧪 LOCAL TEST"
+                if counter.is_local_test
                 else ("🏭 PRODUCTION" if counter.is_production else "🔧 DEVELOPMENT")
             )
             print(f"{mode_indicator} BI COUNTER SCAN REPORT (BINARY SEARCH OPTIMIZED)")
